@@ -40,10 +40,11 @@ class Softmax(object):
         # 	training examples.)
         # ================================================================ #
         scores = np.dot(self.W, X.T)
-        loss = (
-            np.sum(np.log(np.sum(np.exp(scores), axis=0)) - np.choose(y, scores))
-        ) / X.shape[0]
-
+        N = X.shape[0]
+        for i in range(N):
+            curr_ex_scores = scores[:, i] - np.max(scores[:, i])
+            loss += np.log(np.sum(np.exp(curr_ex_scores))) - curr_ex_scores[y[i]]
+        loss = loss / N
         # ================================================================ #
         # END YOUR CODE HERE
         # ================================================================ #
@@ -67,23 +68,31 @@ class Softmax(object):
         #   Calculate the softmax loss and the gradient. Store the gradient
         #   as the variable grad.
         # ================================================================ #
-        print(grad.shape)
         C = self.W.shape[0]
         N = X.shape[0]
 
-        loss = self.loss(X, y)
-        for j in range(C):
-            for i in range(N):
-                w_j = self.W[j]
-                x = X[i]
+        scores = np.dot(self.W, X.T)
+        N = X.shape[0]
+        for i in range(N):
+            curr_ex_scores = scores[:, i] - np.max(scores[:, i])
+            y_i_score = curr_ex_scores[y[i]]
+            x = X[i]
+
+            # Calculate loss
+            loss += np.log(np.sum(np.exp(curr_ex_scores))) - y_i_score
+
+            # Calculate grad
+            for j in range(C):
                 if j != y[i]:
-                    grad[j] += np.exp(np.dot(w_j, x)) / np.sum(
-                        np.exp(np.dot(self.W, x))
-                    )
+                    grad[j] += (
+                        np.exp(curr_ex_scores[j]) / np.sum(np.exp(curr_ex_scores))
+                    ) * x
                 else:
                     grad[j] += (
-                        np.exp(np.dot(w_j, x)) / np.sum(np.exp(np.dot(self.W, x)))
-                    ) - x
+                        np.exp(y_i_score) / np.sum(np.exp(curr_ex_scores))
+                    ) * x - x
+
+        loss = loss / N
         grad = grad / N
         # ================================================================ #
         # END YOUR CODE HERE
@@ -128,7 +137,15 @@ class Softmax(object):
         # YOUR CODE HERE:
         #   Calculate the softmax loss and gradient WITHOUT any for loops.
         # ================================================================ #
-        pass
+        N = X.shape[0]
+        scores = np.dot(self.W, X.T)
+        exp_scores = np.exp(scores)
+        exp_score_sums = np.sum(exp_scores, axis=0)
+        probs = exp_scores / exp_score_sums
+        probs[y, range(N)] -= 1
+
+        loss = (np.sum(np.log(exp_score_sums) - scores[y, range(N)])) / N
+        grad = np.dot(probs, X) / N
 
         # ================================================================ #
         # END YOUR CODE HERE
@@ -181,7 +198,9 @@ class Softmax(object):
             #   in the dataset.  Use np.random.choice.  It's okay to sample with
             #   replacement.
             # ================================================================ #
-            pass
+            sample_indices = np.random.choice(np.arange(num_train), batch_size)
+            X_batch = X[sample_indices, :]
+            y_batch = y[sample_indices]
             # ================================================================ #
             # END YOUR CODE HERE
             # ================================================================ #
@@ -194,7 +213,7 @@ class Softmax(object):
             # YOUR CODE HERE:
             #   Update the parameters, self.W, with a gradient step
             # ================================================================ #
-            pass
+            self.W -= learning_rate * grad
 
             # ================================================================ #
             # END YOUR CODE HERE
@@ -220,7 +239,12 @@ class Softmax(object):
         # YOUR CODE HERE:
         #   Predict the labels given the training data.
         # ================================================================ #
-        pass
+        scores = np.dot(self.W, X.T)
+        exp_scores = np.exp(scores)
+        exp_score_sums = np.sum(exp_scores, axis=0)
+        probs = exp_scores / exp_score_sums
+
+        y_pred = np.argmax(probs, axis=0)
         # ================================================================ #
         # END YOUR CODE HERE
         # ================================================================ #
