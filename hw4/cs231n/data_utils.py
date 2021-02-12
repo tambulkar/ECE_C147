@@ -3,7 +3,7 @@ from __future__ import print_function
 from six.moves import cPickle as pickle
 import numpy as np
 import os
-from scipy.misc import imread
+from matplotlib.pyplot import imread
 import platform
 
 
@@ -52,7 +52,7 @@ def get_CIFAR10_data(
     condensed to a single function.
     """
     # Load the raw CIFAR-10 data
-    cifar10_dir = "cifar-10-batches-py"
+    cifar10_dir = "../cifar-10-batches-py"
     X_train, y_train, X_test, y_test = load_CIFAR10(cifar10_dir)
 
     # Subsample the data

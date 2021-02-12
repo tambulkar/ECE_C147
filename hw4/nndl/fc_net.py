@@ -1,5 +1,4 @@
 import numpy as np
-import pdb
 
 from .layers import *
 from .layer_utils import *
@@ -65,6 +64,17 @@ class TwoLayerNet(object):
         #   dimensions of W2 should be (hidden_dims, num_classes)
         # ================================================================ #
 
+        self.params["W1"] = np.reshape(
+            np.random.normal(0, weight_scale, input_dim * hidden_dims),
+            (input_dim, hidden_dims),
+        )
+        self.params["W2"] = np.reshape(
+            np.random.normal(0, weight_scale, hidden_dims * num_classes),
+            (hidden_dims, num_classes),
+        )
+        self.params["b1"] = np.zeros(hidden_dims)
+        self.params["b2"] = np.zeros(num_classes)
+
         # ================================================================ #
         # END YOUR CODE HERE
         # ================================================================ #
@@ -96,7 +106,8 @@ class TwoLayerNet(object):
         #   the class scores as the variable 'scores'.  Be sure to use the layers
         #   you prior implemented.
         # ================================================================ #
-
+        h1, cache1 = affine_relu_forward(X, self.params["W1"], self.params["b1"])
+        scores, cache2 = affine_forward(h1, self.params["W2"], self.params["b2"])
         # ================================================================ #
         # END YOUR CODE HERE
         # ================================================================ #
@@ -120,7 +131,20 @@ class TwoLayerNet(object):
         #
         #   And be sure to use the layers you prior implemented.
         # ================================================================ #
+        loss, dx = softmax_loss(scores, y)
+        loss += (
+            0.5
+            * self.reg
+            * (
+                np.linalg.norm(self.params["W1"]) ** 2
+                + np.linalg.norm(self.params["W2"]) ** 2
+            )
+        )
+        dh1, grads["W2"], grads["b2"] = affine_backward(dx, cache2)
+        _, grads["W1"], grads["b1"] = affine_relu_backward(dh1, cache1)
 
+        grads["W1"] += self.reg * self.params["W1"]
+        grads["W2"] += self.reg * self.params["W2"]
         # ================================================================ #
         # END YOUR CODE HERE
         # ================================================================ #
@@ -190,14 +214,26 @@ class FullyConnectedNet(object):
         #   weights and biases of layer i are Wi and bi. The
         #   biases are initialized to zero and the weights are initialized
         #   so that each parameter has mean 0 and standard deviation weight_scale.
-        #
-        #   BATCHNORM: Initialize the gammas of each layer to 1 and the beta
-        #   parameters to zero.  The gamma and beta parameters for layer 1 should
-        #   be self.params['gamma1'] and self.params['beta1'].  For layer 2, they
-        #   should be gamma2 and beta2, etc. Only use batchnorm if self.use_batchnorm
-        #   is true and DO NOT do batch normalize the output scores.
         # ================================================================ #
-
+        dims = [input_dim] + hidden_dims + [num_classes]
+        curr_dim = dims[0]
+        next_dim = dims[1]
+        for i in range(1, self.num_layers):
+            self.params[f"W{i}"] = np.reshape(
+                np.random.normal(0, weight_scale, curr_dim * next_dim),
+                (curr_dim, next_dim),
+            )
+            self.params[f"b{i}"] = np.zeros(next_dim)
+            if self.use_batchnorm:
+                self.params[f"gamma{i}"] = np.ones(next_dim)
+                self.params[f"beta{i}"] = np.zeros(next_dim)
+            curr_dim = next_dim
+            next_dim = dims[i]
+        self.params[f"W{self.num_layers}"] = np.reshape(
+            np.random.normal(0, weight_scale, curr_dim * next_dim),
+            (curr_dim, next_dim),
+        )
+        self.params[f"b{self.num_layers}"] = np.zeros(next_dim)
         # ================================================================ #
         # END YOUR CODE HERE
         # ================================================================ #
@@ -247,14 +283,41 @@ class FullyConnectedNet(object):
         # YOUR CODE HERE:
         #   Implement the forward pass of the FC net and store the output
         #   scores as the variable "scores".
-        #
-        #   BATCHNORM: If self.use_batchnorm is true, insert a bathnorm layer
-        #   between the affine_forward and relu_forward layers.  You may
-        #   also write an affine_batchnorm_relu() function in layer_utils.py.
-        #
-        #   DROPOUT: If dropout is non-zero, insert a dropout layer after
-        #   every ReLU layer.
         # ================================================================ #
+        caches = []
+        input = X
+        for i in range(1, self.num_layers):
+            cache = {}
+            a, fc_cache = affine_forward(
+                input,
+                self.params[f"W{i}"],
+                self.params[f"b{i}"],
+            )
+            cache["fc_cache"] = fc_cache
+            relu_input = a
+            if self.use_batchnorm:
+                bn, bn_cache = batchnorm_forward(
+                    a,
+                    self.params[f"gamma{i}"],
+                    self.params[f"beta{i}"],
+                    self.bn_params[i - 1],
+                )
+                relu_input = bn
+                cache["bn_cache"] = bn_cache
+            relu_out, relu_cache = relu_forward(relu_input)
+            cache["relu_cache"] = relu_cache
+            input = relu_out
+            if self.use_dropout:
+                dropout_out, dropout_cache = dropout_forward(relu_out, self.dropout_param)
+                cache["dropout_cache"] = dropout_cache
+                input = dropout_out
+            caches.append(cache)
+        scores, cache = affine_forward(
+            input,
+            self.params[f"W{self.num_layers}"],
+            self.params[f"b{self.num_layers}"],
+        )
+        caches.append({"fc_cache": cache})
 
         # ================================================================ #
         # END YOUR CODE HERE
@@ -270,14 +333,36 @@ class FullyConnectedNet(object):
         #   Implement the backwards pass of the FC net and store the gradients
         #   in the grads dict, so that grads[k] is the gradient of self.params[k]
         #   Be sure your L2 regularization includes a 0.5 factor.
-        #
-        #   BATCHNORM: Incorporate the backward pass of the batchnorm.
-        #
-        #   DROPOUT: Incorporate the backward pass of dropout.
         # ================================================================ #
-
+        loss, dx = softmax_loss(scores, y)
+        loss += 0.5 * self.reg * (np.linalg.norm(self.params[f"W{self.num_layers}"]) ** 2)
+        (
+            dx,
+            grads[f"W{self.num_layers}"],
+            grads[f"b{self.num_layers}"],
+        ) = affine_backward(dx, caches[-1]["fc_cache"])
+        grads[f"W{self.num_layers}"] += self.reg * self.params[f"W{self.num_layers}"]
+        for i in range(self.num_layers - 1, 0, -1):
+            curr_caches = caches[i - 1]
+            relu_back_input = dx
+            if self.use_dropout:
+                d_dropout = dropout_backward(dx, curr_caches["dropout_cache"])
+                relu_back_input = d_dropout
+            da = relu_backward(relu_back_input, curr_caches["relu_cache"])
+            bn_back_input = da
+            affine_back_input = da
+            if self.use_batchnorm:
+                fc_cache, bn_cache, relu_cache = caches[i - 1]
+                dbn, grads[f"gamma{i}"], grads[f"beta{i}"] = batchnorm_backward(
+                    bn_back_input, curr_caches["bn_cache"]
+                )
+                affine_back_input = dbn
+            dx, grads[f"W{i}"], grads[f"b{i}"] = affine_backward(
+                affine_back_input, curr_caches["fc_cache"]
+            )
+            grads[f"W{i}"] += self.reg * self.params[f"W{i}"]
+            loss += 0.5 * self.reg * (np.linalg.norm(self.params[f"W{i}"]) ** 2)
         # ================================================================ #
         # END YOUR CODE HERE
         # ================================================================ #
-
         return loss, grads

@@ -107,7 +107,6 @@ def relu_forward(x):
     # YOUR CODE HERE:
     #   Implement the ReLU forward pass.
     # ================================================================ #
-
     out = np.maximum(0, x)
     # ================================================================ #
     # END YOUR CODE HERE
