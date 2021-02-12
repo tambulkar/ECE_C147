@@ -308,7 +308,9 @@ class FullyConnectedNet(object):
             cache["relu_cache"] = relu_cache
             input = relu_out
             if self.use_dropout:
-                dropout_out, dropout_cache = dropout_forward(relu_out, self.dropout_param)
+                dropout_out, dropout_cache = dropout_forward(
+                    relu_out, self.dropout_param
+                )
                 cache["dropout_cache"] = dropout_cache
                 input = dropout_out
             caches.append(cache)
@@ -335,7 +337,9 @@ class FullyConnectedNet(object):
         #   Be sure your L2 regularization includes a 0.5 factor.
         # ================================================================ #
         loss, dx = softmax_loss(scores, y)
-        loss += 0.5 * self.reg * (np.linalg.norm(self.params[f"W{self.num_layers}"]) ** 2)
+        loss += (
+            0.5 * self.reg * (np.linalg.norm(self.params[f"W{self.num_layers}"]) ** 2)
+        )
         (
             dx,
             grads[f"W{self.num_layers}"],
@@ -352,7 +356,6 @@ class FullyConnectedNet(object):
             bn_back_input = da
             affine_back_input = da
             if self.use_batchnorm:
-                fc_cache, bn_cache, relu_cache = caches[i - 1]
                 dbn, grads[f"gamma{i}"], grads[f"beta{i}"] = batchnorm_backward(
                     bn_back_input, curr_caches["bn_cache"]
                 )
