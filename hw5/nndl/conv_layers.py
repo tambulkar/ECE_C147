@@ -46,6 +46,36 @@ def conv_forward_naive(x, w, b, conv_param):
     #   Store the output as 'out'.
     #   Hint: to pad the array, you can use the function np.pad.
     # ================================================================ #
+    N, C, H, W = x.shape
+    F, C, HH, WW = w.shape
+    out = np.zeros(
+        (
+            N,
+            F,
+            int(1 + (H + 2 * pad - HH) / stride),
+            int(1 + (W + 2 * pad - WW) / stride),
+        )
+    )
+    x_pad = np.pad(x, ((0, 0), (0, 0), (pad, pad), (pad, pad)))
+    N, C, H, W = x_pad.shape
+    N, F, H_prime, W_prime = out.shape
+    for i in range(N):
+        for f in range(F):
+            curr_y = 0
+            for h_prime in range(H_prime):
+                curr_x = 0
+                for w_prime in range(W_prime):
+                    out[i][f][h_prime][w_prime] += (
+                        np.sum(
+                            np.multiply(
+                                x_pad[i, :, curr_y : curr_y + HH, curr_x : curr_x + WW],
+                                w[f],
+                            )
+                        )
+                        + b[f]
+                    )
+                    curr_x += stride
+                curr_y += stride
 
     # ================================================================ #
     # END YOUR CODE HERE
@@ -72,17 +102,56 @@ def conv_backward_naive(dout, cache):
 
     N, F, out_height, out_width = dout.shape
     x, w, b, conv_param = cache
+    N, C, H, W = x.shape
 
     stride, pad = [conv_param["stride"], conv_param["pad"]]
     xpad = np.pad(x, ((0, 0), (0, 0), (pad, pad), (pad, pad)), mode="constant")
     num_filts, _, f_height, f_width = w.shape
 
+    dw = np.zeros_like(w)
+    dx = np.zeros_like(xpad)
+    db = np.zeros_like(b)
     # ================================================================ #
     # YOUR CODE HERE:
     #   Implement the backward pass of a convolutional neural network.
     #   Calculate the gradients: dx, dw, and db.
     # ================================================================ #
+    for i in range(N):
+        for f in range(F):
+            curr_y = 0
+            for h_prime in range(out_height):
+                curr_x = 0
+                for w_prime in range(out_width):
+                    dw[f, :, :, :] += np.multiply(
+                        dout[i, f, h_prime, w_prime],
+                        xpad[
+                            i,
+                            :,
+                            curr_y : curr_y + f_height,
+                            curr_x : curr_x + f_width,
+                        ],
+                    )
 
+                    curr_x += stride
+                curr_y += stride
+
+    for i in range(N):
+        for f in range(F):
+            curr_y = 0
+            for h_prime in range(out_height):
+                curr_x = 0
+                for w_prime in range(out_width):
+                    dx[
+                        i, :, curr_y : curr_y + f_height, curr_x : curr_x + f_width
+                    ] += np.multiply(
+                        dout[i, f, h_prime, w_prime],
+                        w[f, :, :, :],
+                    )
+
+                    curr_x += stride
+                curr_y += stride
+    dx = dx[:, :, pad : pad + H, pad : pad + W]
+    db = np.sum(dout, axis=(0, 2, 3))
     # ================================================================ #
     # END YOUR CODE HERE
     # ================================================================ #
@@ -111,7 +180,29 @@ def max_pool_forward_naive(x, pool_param):
     # YOUR CODE HERE:
     #   Implement the max pooling forward pass.
     # ================================================================ #
+    stride = pool_param["stride"]
+    HH = pool_param["pool_height"]
+    WW = pool_param["pool_width"]
+    N, C, H, W = x.shape
+    out = np.zeros((N, C, int((H - HH) / stride + 1), int((W - WW) / stride + 1)))
+    N, C, H_prime, W_prime = out.shape
 
+    for i in range(N):  # for each image
+        for c in range(C):  # for each channel
+            curr_y = 0
+            for h in range(H_prime):  # from top to bottom
+                curr_x = 0
+                for w in range(W_prime):  # from left to right
+                    out[i, c, h, w] = np.max(
+                        x[
+                            i,
+                            c,
+                            curr_y : curr_y + HH,
+                            curr_x : curr_x + WW,
+                        ]
+                    )
+                    curr_x += stride
+                curr_y += stride
     # ================================================================ #
     # END YOUR CODE HERE
     # ================================================================ #
@@ -142,7 +233,33 @@ def max_pool_backward_naive(dout, cache):
     # YOUR CODE HERE:
     #   Implement the max pooling backward pass.
     # ================================================================ #
+    stride = pool_param["stride"]
+    HH = pool_param["pool_height"]
+    WW = pool_param["pool_width"]
+    N, C, H, W = x.shape
+    out = np.zeros((N, C, int((H - HH) / stride + 1), int((W - WW) / stride + 1)))
+    N, C, H_prime, W_prime = out.shape
+    dx = np.zeros_like(x)
+    for i in range(N):  # for each image
+        for c in range(C):  # for each channel
+            curr_y = 0
+            for h in range(H_prime):  # from top to bottom
+                curr_x = 0
+                for w in range(W_prime):  # from left to right
+                    max_indices = np.argmax(
+                        x[
+                            i,
+                            c,
+                            curr_y : curr_y + HH,
+                            curr_x : curr_x + WW,
+                        ]
+                    )
 
+                    dx[i, c, curr_y : curr_y + HH, curr_x : curr_x + WW][
+                        np.unravel_index(max_indices, [HH, WW])
+                    ] = dout[i, c, h, w]
+                    curr_x += stride
+                curr_y += stride
     # ================================================================ #
     # END YOUR CODE HERE
     # ================================================================ #
