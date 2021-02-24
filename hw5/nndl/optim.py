@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.core.arrayprint import _leading_trailing
 
 """ 
 This code was originally written for CS 231n at Stanford University
@@ -77,7 +78,10 @@ def sgd_momentum(w, dw, config=None):
     #   Implement the momentum update formula.  Return the updated weights
     #   as next_w, and the updated velocity as v.
     # ================================================================ #
-
+    learning_rate = config.get("learning_rate")
+    momentum = config.get("momentum")
+    v = (momentum * v) - (learning_rate * dw)
+    next_w = w + v
     # ================================================================ #
     # END YOUR CODE HERE
     # ================================================================ #
@@ -109,7 +113,11 @@ def sgd_nesterov_momentum(w, dw, config=None):
     #   Implement the momentum update formula.  Return the updated weights
     #   as next_w, and the updated velocity as v.
     # ================================================================ #
-
+    learning_rate = config.get("learning_rate")
+    momentum = config.get("momentum")
+    v_prev = v
+    v = (momentum * v) - (learning_rate * dw)
+    next_w = w + v + momentum * (v - v_prev)
     # ================================================================ #
     # END YOUR CODE HERE
     # ================================================================ #
@@ -147,7 +155,13 @@ def rmsprop(w, dw, config=None):
     #   moment gradients, so they can be used for future gradients. Concretely,
     #   config['a'] corresponds to "a" in the lecture notes.
     # ================================================================ #
-
+    decay_rate = config.get("decay_rate")
+    learning_rate = config.get("learning_rate")
+    epsilon = config.get("epsilon")
+    beta = config.get("a")
+    beta = decay_rate * beta + (1 - decay_rate) * dw * dw
+    config["a"] = beta
+    next_w = w - (learning_rate / np.sqrt(beta)) * dw + epsilon
     # ================================================================ #
     # END YOUR CODE HERE
     # ================================================================ #
@@ -188,7 +202,21 @@ def adam(w, dw, config=None):
     #   moment gradients, and in config['v'] the moving average of the
     #   first moments.  Finally, store in config['t'] the increasing time.
     # ================================================================ #
-
+    learning_rate = config.get("learning_rate")
+    beta1 = config.get("beta1")
+    beta2 = config.get("beta2")
+    epsilon = config.get("epsilon")
+    v = config.get("v")
+    a = config.get("a")
+    t = config.get("t") + 1
+    v = beta1 * v + (1 - beta1) * dw
+    a = beta2 * a + (1 - beta2) * dw ** 2
+    v_hat = v / (1 - beta1 ** t)
+    a_hat = a / (1 - beta2 ** t)
+    config["v"] = v
+    config["a"] = a
+    config["t"] = t
+    next_w = w - learning_rate * v_hat / (epsilon + np.sqrt(a_hat))
     # ================================================================ #
     # END YOUR CODE HERE
     # ================================================================ #
