@@ -74,6 +74,9 @@ class ThreeLayerConvNet(object):
             loc=0, scale=weight_scale, size=(num_filters, C, filter_size, filter_size)
         )
         self.params["b1"] = np.zeros(num_filters)
+        if self.use_batchnorm:
+            self.params[f"gamma1"] = np.ones(num_filters)
+            self.params[f"beta1"] = np.zeros(num_filters)
         stride = 1
         pad = (filter_size - 1) / 2
         conv_out_height = 1 + (H + 2 * pad - filter_size) / stride
@@ -86,10 +89,20 @@ class ThreeLayerConvNet(object):
             size=(num_filters * pool_out_height * pool_out_width, hidden_dim),
         )
         self.params["b2"] = np.zeros(hidden_dim)
+        if self.use_batchnorm:
+            self.params[f"gamma2"] = np.ones(hidden_dim)
+            self.params[f"beta2"] = np.zeros(hidden_dim)
         self.params["W3"] = np.random.normal(
             loc=0, scale=weight_scale, size=(hidden_dim, num_classes)
         )
         self.params["b3"] = np.zeros(num_classes)
+        if use_batchnorm:
+            self.params[f"gamma3"] = np.ones(num_classes)
+            self.params[f"beta3"] = np.zeros(num_classes)
+
+        self.bn_params = []
+        if self.use_batchnorm:
+            self.bn_params = [{"mode": "train"} for i in np.arange(3)]
         # ================================================================ #
         # END YOUR CODE HERE
         # ================================================================ #
@@ -103,9 +116,29 @@ class ThreeLayerConvNet(object):
 
         Input / output: Same API as TwoLayerNet in fc_net.py.
         """
-        W1, b1 = self.params["W1"], self.params["b1"]
-        W2, b2 = self.params["W2"], self.params["b2"]
-        W3, b3 = self.params["W3"], self.params["b3"]
+        mode = "test" if y is None else "train"
+        if self.use_batchnorm:
+            for bn_param in self.bn_params:
+                bn_param[mode] = mode
+
+        W1, b1, gamma1, beta1 = (
+            self.params["W1"],
+            self.params["b1"],
+            self.params["gamma1"] if self.use_batchnorm else None,
+            self.params["beta1"] if self.use_batchnorm else None,
+        )
+        W2, b2, gamma2, beta2 = (
+            self.params["W2"],
+            self.params["b2"],
+            self.params["gamma2"] if self.use_batchnorm else None,
+            self.params["beta2"] if self.use_batchnorm else None,
+        )
+        W3, b3, gamma3, beta3 = (
+            self.params["W3"],
+            self.params["b3"],
+            self.params["gamma3"] if self.use_batchnorm else None,
+            self.params["beta3"] if self.use_batchnorm else None,
+        )
         # pass conv_param to the forward pass for the convolutional layer
         filter_size = W1.shape[2]
         conv_param = {"stride": 1, "pad": (filter_size - 1) / 2}
@@ -120,9 +153,20 @@ class ThreeLayerConvNet(object):
         #   Implement the forward pass of the three layer CNN.  Store the output
         #   scores as the variable "scores".
         # ================================================================ #
-        out1, cache1 = conv_relu_pool_forward(X, W1, b1, conv_param, pool_param)
-        out2, cache2 = affine_relu_forward(out1, W2, b2)
-        scores, cache3 = affine_forward(out2, W3, b3)
+        out, conv_relu_pool_cache = conv_relu_pool_forward(
+            X, W1, b1, conv_param, pool_param
+        )
+        if self.use_batchnorm:
+            out, bn_cache_1 = spatial_batchnorm_forward(
+                out, gamma1, beta1, self.bn_params[0]
+            )
+        out, affine_relu_cache = affine_relu_forward(out, W2, b2)
+        if self.use_batchnorm:
+            out, bn_cache_2 = batchnorm_forward(out, gamma2, beta2, self.bn_params[1])
+        out, affine_cache = affine_forward(out, W3, b3)
+        if self.use_batchnorm:
+            out, bn_cache_3 = batchnorm_forward(out, gamma3, beta3, self.bn_params[2])
+        scores = out
         # ================================================================ #
         # END YOUR CODE HERE
         # ================================================================ #
@@ -138,26 +182,40 @@ class ThreeLayerConvNet(object):
         #   self.params[k] will be grads[k]).  Store the loss as "loss", and
         #   don't forget to add regularization on ALL weight matrices.
         # ================================================================ #
-        loss, dloss = softmax_loss(scores, y)  # 3rd layer: softmax
+        loss, dout = softmax_loss(scores, y)
         loss += (
             self.reg
             * 0.5
             * (np.linalg.norm(W1) + np.linalg.norm(W2) + np.linalg.norm(W3))
         )
 
-        ## backward: [N, 10] -> [N, 3, 32, 32]
-        dx3, dw3, db3 = affine_backward(dloss, cache3)  # oppo 3rd layer: fc
-        dx2, dw2, db2 = affine_relu_backward(dx3, cache2)  # oppo 2nd layer: fc
-        dx1, dw1, db1 = conv_relu_pool_backward(
-            dx2, cache1
-        )  # oppo 1st layer: conv + relu + pool
+        if self.use_batchnorm:
+            dout, dgamma3, dbeta3 = batchnorm_backward(dout, bn_cache_3)
+        dout, dw3, db3 = affine_backward(dout, affine_cache)
+        if self.use_batchnorm:
+            dout, dgamma2, dbeta2 = batchnorm_backward(dout, bn_cache_2)
+        dout, dw2, db2 = affine_relu_backward(dout, affine_relu_cache)
+        if self.use_batchnorm:
+            dout, dgamma1, dbeta1 = spatial_batchnorm_backward(dout, bn_cache_1)
+        dout, dw1, db1 = conv_relu_pool_backward(dout, conv_relu_pool_cache)
 
         grads["W3"] = dw3 + self.reg * W3
         grads["b3"] = db3
+        if self.use_batchnorm:
+            grads["gamma3"] = dgamma3
+            grads["beta3"] = dbeta3
+
         grads["W2"] = dw2 + self.reg * W2
         grads["b2"] = db2
+        if self.use_batchnorm:
+            grads["gamma2"] = dgamma2
+            grads["beta2"] = dbeta2
+
         grads["W1"] = dw1 + self.reg * W1
         grads["b1"] = db1
+        if self.use_batchnorm:
+            grads["gamma1"] = dgamma1
+            grads["beta1"] = dbeta1
         # ================================================================ #
         # END YOUR CODE HERE
         # ================================================================ #
